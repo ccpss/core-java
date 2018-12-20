@@ -8,9 +8,9 @@
 package eu.arrowhead.common.database;
 
 import com.google.common.base.MoreObjects;
-import eu.arrowhead.common.json.constraint.LDTInFuture;
 import eu.arrowhead.common.json.constraint.SENotBlank;
-import java.time.LocalDateTime;
+import eu.arrowhead.common.json.constraint.ZDTInFuture;
+import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -33,6 +33,7 @@ import javax.persistence.UniqueConstraint;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
+import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.Type;
@@ -43,7 +44,8 @@ import org.hibernate.validator.constraints.NotBlank;
 public class EventFilter {
 
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private Long id;
 
   @NotBlank
@@ -65,11 +67,11 @@ public class EventFilter {
   private Set<ArrowheadSystem> sources = new HashSet<>();
 
   @Column(name = "start_date")
-  private LocalDateTime startDate;
+  private ZonedDateTime startDate;
 
   @Column(name = "end_date")
-  @LDTInFuture(message = "Filter end date must be in the future")
-  private LocalDateTime endDate;
+  @ZDTInFuture(message = "Filter end date must be in the future")
+  private ZonedDateTime endDate;
 
   @ElementCollection(fetch = FetchType.EAGER)
   @MapKeyColumn(name = "metadata_key")
@@ -88,7 +90,7 @@ public class EventFilter {
   public EventFilter() {
   }
 
-  public EventFilter(String eventType, ArrowheadSystem consumer, Set<ArrowheadSystem> sources, LocalDateTime startDate, LocalDateTime endDate,
+  public EventFilter(String eventType, ArrowheadSystem consumer, Set<ArrowheadSystem> sources, ZonedDateTime startDate, ZonedDateTime endDate,
                      Map<String, String> filterMetadata, String notifyUri, boolean matchMetadata) {
     this.eventType = eventType;
     this.consumer = consumer;
@@ -132,19 +134,19 @@ public class EventFilter {
     this.sources = sources;
   }
 
-  public LocalDateTime getStartDate() {
+  public ZonedDateTime getStartDate() {
     return startDate;
   }
 
-  public void setStartDate(LocalDateTime startDate) {
+  public void setStartDate(ZonedDateTime startDate) {
     this.startDate = startDate;
   }
 
-  public LocalDateTime getEndDate() {
+  public ZonedDateTime getEndDate() {
     return endDate;
   }
 
-  public void setEndDate(LocalDateTime endDate) {
+  public void setEndDate(ZonedDateTime endDate) {
     this.endDate = endDate;
   }
 

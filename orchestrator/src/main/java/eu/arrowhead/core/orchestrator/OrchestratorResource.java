@@ -10,6 +10,7 @@ package eu.arrowhead.core.orchestrator;
 import eu.arrowhead.common.database.ArrowheadSystem;
 import eu.arrowhead.common.messages.OrchestrationResponse;
 import eu.arrowhead.common.messages.ServiceRequestForm;
+import eu.arrowhead.common.web.ArrowheadSystemApi;
 import javax.validation.Valid;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -53,13 +54,13 @@ public class OrchestratorResource {
     srf.validateCrossParameterConstraints();
 
     OrchestrationResponse orchResponse;
-    if (srf.getOrchestrationFlags().get("externalServiceRequest")) {
+    if (srf.getOrchestrationFlags().getOrDefault("externalServiceRequest", false)) {
       log.info("Received an externalServiceRequest.");
       orchResponse = OrchestratorService.externalServiceRequest(srf);
-    } else if (srf.getOrchestrationFlags().get("triggerInterCloud")) {
+    } else if (srf.getOrchestrationFlags().getOrDefault("triggerInterCloud", false)) {
       log.info("Received a triggerInterCloud request.");
       orchResponse = OrchestratorService.triggerInterCloud(srf);
-    } else if (!srf.getOrchestrationFlags().get("overrideStore")) { //overrideStore == false
+    } else if (!srf.getOrchestrationFlags().getOrDefault("overrideStore", false)) { //overrideStore == false
       log.info("Received an orchestrationFromStore request.");
       orchResponse = OrchestratorService.orchestrationFromStore(srf);
     } else {
@@ -72,15 +73,16 @@ public class OrchestratorResource {
   }
 
   /**
-   * Default Store orchestration process offered on a GET request, where the requester only has to send 2 String path parameters.
+   * Default Store orchestration process offered on a GET request, where the requester only has the consumer system ID.
    */
   @GET
-  @Path("{systemName}")
-  public Response storeOrchestrationProcess(@PathParam("systemName") String systemName) {
-    ArrowheadSystem requesterSystem = new ArrowheadSystem(systemName, null, 0, null);
+  @Path("{systemId}")
+  public Response storeOrchestrationProcess(@PathParam("systemId") long systemId) {
+    ArrowheadSystem requesterSystem = new ArrowheadSystemApi().getSystem(systemId);
     log.info("Received a GET Store orchestration from: " + requesterSystem.getSystemName());
 
     ServiceRequestForm srf = new ServiceRequestForm.Builder(requesterSystem).build();
+    srf.validateCrossParameterConstraints();
     OrchestrationResponse orchResponse = OrchestratorService.orchestrationFromStore(srf);
 
     log.info("Default store orchestration returned with " + orchResponse.getResponse().size() + " orchestration forms.");

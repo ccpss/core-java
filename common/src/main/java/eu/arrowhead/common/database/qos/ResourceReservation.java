@@ -21,6 +21,7 @@ import javax.persistence.JoinColumn;
 import javax.persistence.MapKeyColumn;
 import javax.persistence.Table;
 import javax.xml.bind.annotation.XmlTransient;
+import org.hibernate.annotations.GenericGenerator;
 
 @Entity
 @Table(name = "resource_reservation")
@@ -28,7 +29,8 @@ public class ResourceReservation {
 
   @Column(name = "id")
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private int id;
 
   @Column(name = "state")

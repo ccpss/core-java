@@ -26,6 +26,7 @@ import javax.persistence.MapKeyColumn;
 import javax.persistence.OneToOne;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
+import org.hibernate.annotations.GenericGenerator;
 
 @Entity
 @Table(name = "message_stream", uniqueConstraints = {
@@ -34,7 +35,8 @@ public class MessageStream {
 
   @Column(name = "id")
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private int id;
 
   @JoinColumn(name = "arrowhead_service_id")

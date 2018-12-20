@@ -18,7 +18,7 @@ public class ServiceQueryForm {
   private ArrowheadService service;
   private boolean pingProviders;
   private boolean metadataSearch;
-  private int version = 1;
+  private Integer version;
 
   public ServiceQueryForm() {
   }
@@ -31,8 +31,8 @@ public class ServiceQueryForm {
 
   public ServiceQueryForm(ServiceRequestForm srf) {
     this.service = srf.getRequestedService();
-    this.pingProviders = srf.getOrchestrationFlags().get("pingProvider");
-    this.metadataSearch = srf.getOrchestrationFlags().get("metadataSearch");
+    this.pingProviders = srf.getOrchestrationFlags().getOrDefault("pingProvider", false);
+    this.metadataSearch = srf.getOrchestrationFlags().getOrDefault("metadataSearch", false);
   }
 
   public ArrowheadService getService() {
@@ -59,11 +59,11 @@ public class ServiceQueryForm {
     this.metadataSearch = metadataSearch;
   }
 
-  public int getVersion() {
+  public Integer getVersion() {
     return version;
   }
 
-  public void setVersion(int version) {
+  public void setVersion(Integer version) {
     this.version = version;
   }
 

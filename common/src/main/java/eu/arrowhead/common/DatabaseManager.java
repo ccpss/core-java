@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.ServiceConfigurationError;
+import javax.persistence.PersistenceException;
 import javax.ws.rs.core.Response.Status;
 import org.apache.log4j.Logger;
 import org.hibernate.Criteria;
@@ -27,6 +28,7 @@ import org.hibernate.criterion.Restrictions;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.query.Query;
 
+//NOTE should move to EntityManager from Sessions, using the JPA criteria API (Hibernate criteria will be removed in Hibernate 6)
 public class DatabaseManager {
 
   private static volatile DatabaseManager instance;
@@ -197,20 +199,22 @@ public class DatabaseManager {
   }
 
 
-  public <T> T save(T object) {
+  public <T> T save(T... objects) {
     Transaction transaction = null;
 
     try (Session session = getSessionFactory().openSession()) {
       transaction = session.beginTransaction();
-      session.save(object);
+      for (T object : objects) {
+        session.save(object);
+      }
       transaction.commit();
-    } catch (ConstraintViolationException e) {
+    } catch (PersistenceException e) {
       if (transaction != null) {
         transaction.rollback();
       }
-      log.error("DatabaseManager:save throws DuplicateEntryException");
+      log.error("DatabaseManager:save throws DuplicateEntryException", e);
       throw new DuplicateEntryException(
-          "There is already an entry in the database with these parameters. Please check the unique fields of the " + object.getClass(),
+          "There is already an entry in the database with these parameters. Please check the unique fields of the " + objects.getClass(),
           Status.BAD_REQUEST.getStatusCode(), e);
     } catch (Exception e) {
       if (transaction != null) {
@@ -219,7 +223,7 @@ public class DatabaseManager {
       throw e;
     }
 
-    return object;
+    return objects[0];
   }
 
 
@@ -230,11 +234,11 @@ public class DatabaseManager {
       transaction = session.beginTransaction();
       session.merge(object);
       transaction.commit();
-    } catch (ConstraintViolationException e) {
+    } catch (PersistenceException e) {
       if (transaction != null) {
         transaction.rollback();
       }
-      log.error("DatabaseManager:merge throws DuplicateEntryException");
+      log.error("DatabaseManager:merge throws DuplicateEntryException", e);
       throw new DuplicateEntryException(
           "There is already an entry in the database with these parameters. Please check the unique fields of the " + object.getClass(),
           Status.BAD_REQUEST.getStatusCode(), e);

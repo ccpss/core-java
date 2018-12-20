@@ -43,6 +43,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -184,6 +185,8 @@ public final class Utility {
     return sendRequest(uri, method, payload, null);
   }
 
+  //TODO option for async request sending which can be used by the event handler
+
   private static void handleException(Response response, String uri) {
     //The response body has to be extracted before the stream closes
     String errorMessageBody = toPrettyJson(null, response.getEntity());
@@ -242,7 +245,7 @@ public final class Utility {
     }
   }
 
-  public static String getUri(String address, int port, String serviceUri, boolean isSecure, boolean serverStart) {
+  public static String getUri(String address, int port, String serviceURI, boolean isSecure, boolean serverStart) {
     if (address == null) {
       log.error("Address can not be null (Utility:getUri throws NPE)");
       throw new NullPointerException("Address can not be null (Utility:getUri throws NPE)");
@@ -257,8 +260,8 @@ public final class Utility {
     if (port > 0) {
       ub.port(port);
     }
-    if (serviceUri != null) {
-      ub.path(serviceUri);
+    if (serviceURI != null) {
+      ub.path(serviceURI);
     }
 
     String url = ub.toString();
@@ -291,12 +294,12 @@ public final class Utility {
       if (!entry.getProvidedService().getServiceMetadata().isEmpty()) {
         isSecure = entry.getProvidedService().getServiceMetadata().containsKey("security");
       }
-      String serviceUri = getUri(coreSystem.getAddress(), coreSystem.getPort(), entry.getServiceUri(), isSecure, false);
+      String serviceURI = getUri(coreSystem.getAddress(), coreSystem.getPort(), entry.getServiceURI(), isSecure, false);
       if (serviceId.equals(CoreSystemService.GW_CONSUMER_SERVICE.getServiceDef()) || serviceId
           .equals(CoreSystemService.GW_PROVIDER_SERVICE.getServiceDef())) {
-        return Optional.of(new String[]{serviceUri, coreSystem.getSystemName(), coreSystem.getAddress(), coreSystem.getAuthenticationInfo()});
+        return Optional.of(new String[]{serviceURI, coreSystem.getSystemName(), coreSystem.getAddress(), coreSystem.getAuthenticationInfo()});
       }
-      return Optional.of(new String[]{serviceUri});
+      return Optional.of(new String[]{serviceURI});
     }
     return Optional.empty();
   }
@@ -416,7 +419,12 @@ public final class Utility {
   public static TypeSafeProperties getProp(String fileName) {
     TypeSafeProperties prop = new TypeSafeProperties();
     try {
-      File file = new File("config" + File.separator + fileName);
+      File file;
+      if (new File(fileName).exists()) {
+        file = new File(fileName);
+      } else {
+        file = new File("config" + File.separator + fileName);
+      }
       FileInputStream inputStream = new FileInputStream(file);
       prop.load(inputStream);
     } catch (FileNotFoundException ex) {
@@ -433,20 +441,44 @@ public final class Utility {
 
     try {
       if (Files.isReadable(Paths.get(DEFAULT_CONF))) {
-        prop.load(new FileInputStream(new File(DEFAULT_CONF)));
+        prop.load(new FileInputStream(DEFAULT_CONF));
       } else if (Files.isReadable(Paths.get(DEFAULT_CONF_DIR))) {
-        prop.load(new FileInputStream(new File(DEFAULT_CONF_DIR)));
+        prop.load(new FileInputStream(DEFAULT_CONF_DIR));
       } else {
         throw new ServiceConfigurationError("default.conf file not found in the working directory! (" + System.getProperty("user.dir") + ")");
       }
 
       if (Files.isReadable(Paths.get(APP_CONF))) {
-        prop.load(new FileInputStream(new File(APP_CONF)));
+        prop.load(new FileInputStream(APP_CONF));
       } else if (Files.isReadable(Paths.get(APP_CONF_DIR))) {
-        prop.load(new FileInputStream(new File(APP_CONF_DIR)));
+        prop.load(new FileInputStream(APP_CONF_DIR));
       }
     } catch (IOException e) {
       throw new AssertionError("File loading failed...", e);
+    }
+
+    //If MySQL based JDBC URLs are used, we append the system default time zone to the URL
+    //This is for a bug fix with certain MySQL JDBC driver versions: https://github.com/arrowhead-f/core-java/issues/30
+    String timeZoneQueryParam = "serverTimezone=" + ZoneId.systemDefault().getId();
+
+    String dbAddress = prop.getProperty("db_address");
+    if (dbAddress != null && dbAddress.contains("mysql")) {
+      if (dbAddress.contains("?")) {
+        dbAddress = dbAddress + "&" + timeZoneQueryParam;
+      } else {
+        dbAddress = dbAddress + "?" + timeZoneQueryParam;
+      }
+      prop.setProperty("db_address", dbAddress);
+    }
+
+    String logAddress = prop.getProperty("log4j.appender.DB.URL");
+    if (logAddress != null && logAddress.contains("mysql")) {
+      if (logAddress.contains("?")) {
+        logAddress = logAddress + "&" + timeZoneQueryParam;
+      } else {
+        logAddress = logAddress + "?" + timeZoneQueryParam;
+      }
+      prop.setProperty("log4j.appender.DB.URL", logAddress);
     }
 
     return prop;

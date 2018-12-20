@@ -22,6 +22,7 @@ import javax.persistence.MapKeyColumn;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
 import javax.xml.bind.annotation.XmlTransient;
+import org.hibernate.annotations.GenericGenerator;
 
 @Entity
 @Table(name = "network", uniqueConstraints = {@UniqueConstraint(columnNames = {"network_name"})})
@@ -29,7 +30,8 @@ public class Network {
 
   @Column(name = "id")
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private int id;
 
   @Column(name = "network_name")

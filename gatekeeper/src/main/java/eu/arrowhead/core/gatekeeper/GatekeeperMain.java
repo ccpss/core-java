@@ -10,11 +10,15 @@ package eu.arrowhead.core.gatekeeper;
 import eu.arrowhead.common.ArrowheadMain;
 import eu.arrowhead.common.DatabaseManager;
 import eu.arrowhead.common.Utility;
+import eu.arrowhead.common.database.ArrowheadCloud;
 import eu.arrowhead.common.database.ArrowheadService;
 import eu.arrowhead.common.database.ArrowheadSystem;
+import eu.arrowhead.common.database.Broker;
+import eu.arrowhead.common.database.OwnCloud;
 import eu.arrowhead.common.database.ServiceRegistryEntry;
 import eu.arrowhead.common.exception.ArrowheadException;
 import eu.arrowhead.common.exception.AuthException;
+import eu.arrowhead.common.exception.DataNotFoundException;
 import eu.arrowhead.common.exception.ExceptionType;
 import eu.arrowhead.common.misc.CoreSystemService;
 import eu.arrowhead.common.misc.GetCoreSystemServicesTask;
@@ -47,6 +51,7 @@ import org.glassfish.grizzly.http.server.CLStaticHttpHandler;
 import org.glassfish.grizzly.http.server.HttpHandler;
 import org.glassfish.grizzly.http.server.HttpServer;
 import org.glassfish.grizzly.ssl.SSLContextConfigurator;
+import org.glassfish.grizzly.ssl.SSLContextConfigurator.GenericStoreException;
 import org.glassfish.grizzly.ssl.SSLEngineConfigurator;
 import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
 import org.glassfish.jersey.server.ResourceConfig;
@@ -57,26 +62,31 @@ public class GatekeeperMain implements NeedsCoreSystemService {
 
   static boolean IS_SECURE;
   static boolean USE_GATEWAY;
-  static String ORCHESTRATOR_URI;
   static String SERVICE_REGISTRY_URI;
-  static String AUTH_CONTROL_URI;
-  static String[] GATEWAY_CONSUMER_URI;
-  static String[] GATEWAY_PROVIDER_URI;
   static SSLContext outboundClientContext;
   static SSLContext outboundServerContext;
   static final int TIMEOUT;
+  static final String GATEKEEPER_SERVICE_URI = "gatekeeper";
 
   private static String INBOUND_BASE_URI;
   private static String OUTBOUND_BASE_URI;
   private static String BASE64_PUBLIC_KEY;
   private static HttpServer inboundServer;
   private static HttpServer outboundServer;
+  private static String ORCHESTRATOR_URI;
+  private static String AUTH_CONTROL_URI;
+  private static String[] GATEWAY_CONSUMER_URI;
+  private static String[] GATEWAY_PROVIDER_URI;
 
   private static final TypeSafeProperties props;
   private static final Logger log = Logger.getLogger(GatekeeperMain.class.getName());
 
+  private static final String GET_CORE_SYSTEM_URLS_ERROR_MESSAGE = "The Gatekeeper core system has not acquireq the addresses of the "
+      + "Authorization, Orchestrator and Gateway core systems yet from the Service Registry. Wait 15 seconds and retry your request";
+
   static {
     props = Utility.getProp();
+    DatabaseManager.init();
     PropertyConfigurator.configure(props);
     USE_GATEWAY = props.getBooleanProperty("use_gateway", false);
     TIMEOUT = props.getIntProperty("timeout", 30000);
@@ -96,7 +106,8 @@ public class GatekeeperMain implements NeedsCoreSystemService {
     System.out.println("Working directory: " + System.getProperty("user.dir"));
     DatabaseManager.init();
 
-    String address = props.getProperty("address", "0.0.0.0");
+    String internalAddress = props.getProperty("internal_address", "0.0.0.0");
+    String externalAddress = props.getProperty("external_address", "0.0.0.0");
     int internalInsecurePort = props.getIntProperty("internal_insecure_port", 8446);
     int internalSecurePort = props.getIntProperty("internal_secure_port", 8447);
     int externalInsecurePort = props.getIntProperty("external_insecure_port", 8448);
@@ -119,25 +130,51 @@ public class GatekeeperMain implements NeedsCoreSystemService {
           System.out.println("Starting server in debug mode!");
           break;
         case "-tls":
-          List<String> allMandatoryProperties = new ArrayList<>(alwaysMandatoryProperties);
-          allMandatoryProperties.addAll(Arrays.asList("gatekeeper_keystore", "gatekeeper_keystore_pass", "gatekeeper_keypass", "cloud_keystore",
-                                                      "cloud_keystore_pass", "cloud_keypass", "master_arrowhead_cert"));
-          Utility.checkProperties(props.stringPropertyNames(), allMandatoryProperties);
-          INBOUND_BASE_URI = Utility.getUri(address, internalSecurePort, null, true, true);
-          OUTBOUND_BASE_URI = Utility.getUri(address, externalSecurePort, null, true, true);
-          SERVICE_REGISTRY_URI = Utility.getUri(srAddress, srSecurePort, "serviceregistry", true, true);
-          inboundServer = startSecureServer(INBOUND_BASE_URI, true);
-          outboundServer = startSecureServer(OUTBOUND_BASE_URI, false);
-          useSRService(true);
           IS_SECURE = true;
           break;
       }
     }
-    if (inboundServer == null) {
+
+    final DatabaseManager dm = DatabaseManager.getInstance();
+    try {
+      Utility.getOwnCloud(IS_SECURE);
+    } catch (DataNotFoundException e) {
+      System.out.println("Own cloud not found, creating it...");
+      String gatekeeperKeystorePath = props.getProperty("gatekeeper_keystore");
+      String gatekeeperKeystorePass = props.getProperty("gatekeeper_keystore_pass");
+      final String[] serverCN = getServerCN(gatekeeperKeystorePath, gatekeeperKeystorePass, false).split("\\.");
+      final ArrowheadCloud cloud = new ArrowheadCloud(serverCN[2], serverCN[1] + (IS_SECURE ? "" : "-insecure"), externalAddress,
+                                                      IS_SECURE ? externalSecurePort : externalInsecurePort, GATEKEEPER_SERVICE_URI,
+                                                      IS_SECURE ? getAuthBase64(gatekeeperKeystorePath, gatekeeperKeystorePass) : null, IS_SECURE);
+      final OwnCloud ownCloud = new OwnCloud(cloud);
+      dm.save(cloud, ownCloud);
+    }
+
+    if (dm.getAll(Broker.class, null).isEmpty() &&
+        props.getBooleanProperty("public_brokers", false)) {
+      dm.save(
+          new Broker("arrowhead-relay.tmit.bme.hu", 5672, false),
+          new Broker("arrowhead-relay.tmit.bme.hu", 5671, true),
+          new Broker("arrowhead-relay2.tmit.bme.hu", 5672, false),
+          new Broker("arrowhead-relay2.tmit.bme.hu", 5671, true));
+    }
+
+    if (IS_SECURE) {
+      List<String> allMandatoryProperties = new ArrayList<>(alwaysMandatoryProperties);
+      allMandatoryProperties.addAll(Arrays.asList("gatekeeper_keystore", "gatekeeper_keystore_pass", "gatekeeper_keypass", "cloud_keystore",
+                                                  "cloud_keystore_pass", "cloud_keypass", "master_arrowhead_cert"));
+      Utility.checkProperties(props.stringPropertyNames(), allMandatoryProperties);
+      INBOUND_BASE_URI = Utility.getUri(internalAddress, internalSecurePort, null, IS_SECURE, true);
+      OUTBOUND_BASE_URI = Utility.getUri(externalAddress, externalSecurePort, null, IS_SECURE, true);
+      SERVICE_REGISTRY_URI = Utility.getUri(srAddress, srSecurePort, "serviceregistry", IS_SECURE, true);
+      inboundServer = startSecureServer(INBOUND_BASE_URI, true);
+      outboundServer = startSecureServer(OUTBOUND_BASE_URI, false);
+      useSRService(true);
+    } else {
       Utility.checkProperties(props.stringPropertyNames(), alwaysMandatoryProperties);
-      INBOUND_BASE_URI = Utility.getUri(address, internalInsecurePort, null, false, true);
-      OUTBOUND_BASE_URI = Utility.getUri(address, externalInsecurePort, null, false, true);
-      SERVICE_REGISTRY_URI = Utility.getUri(srAddress, srInsecurePort, "serviceregistry", false, true);
+      INBOUND_BASE_URI = Utility.getUri(internalAddress, internalInsecurePort, null, IS_SECURE, true);
+      OUTBOUND_BASE_URI = Utility.getUri(externalAddress, externalInsecurePort, null, IS_SECURE, true);
+      SERVICE_REGISTRY_URI = Utility.getUri(srAddress, srInsecurePort, "serviceregistry", IS_SECURE, true);
       inboundServer = startServer(INBOUND_BASE_URI, true);
       outboundServer = startServer(OUTBOUND_BASE_URI, false);
       useSRService(true);
@@ -161,6 +198,12 @@ public class GatekeeperMain implements NeedsCoreSystemService {
       br.close();
       shutdown();
     }
+  }
+
+  private static String getAuthBase64(String keystorePath, String keystorePass) {
+    KeyStore keyStore = SecurityUtils.loadKeyStore(keystorePath, keystorePass);
+    X509Certificate serverCert = SecurityUtils.getFirstCertFromKeyStore(keyStore);
+    return Base64.getEncoder().encodeToString(serverCert.getPublicKey().getEncoded());
   }
 
   private static HttpServer startServer(final String url, final boolean inbound) {
@@ -221,11 +264,13 @@ public class GatekeeperMain implements NeedsCoreSystemService {
       clientConfig.setKeyPass(gatekeeperKeyPass);
       clientConfig.setTrustStoreFile(cloudKeystorePath);
       clientConfig.setTrustStorePass(cloudKeystorePass);
-      if (!clientConfig.validateConfiguration(true)) {
+      SSLContext clientContext;
+      try {
+        clientContext = clientConfig.createSSLContext(true);
+      } catch (GenericStoreException e) {
         log.fatal("Internal client SSL Context is not valid, check the certificate or the config files!");
-        throw new AuthException("Internal client SSL Context is not valid, check the certificate or the config files!");
+        throw new AuthException("Internal client SSL Context is not valid, check the certificate or the config files!", e);
       }
-      SSLContext clientContext = clientConfig.createSSLContext();
       Utility.setSSLContext(clientContext);
     } else {
       SSLContextConfigurator serverConfig = new SSLContextConfigurator();
@@ -234,11 +279,12 @@ public class GatekeeperMain implements NeedsCoreSystemService {
       serverConfig.setKeyPass(gatekeeperKeyPass);
       serverConfig.setTrustStoreFile(cloudKeystorePath);
       serverConfig.setTrustStorePass(cloudKeystorePass);
-      if (!serverConfig.validateConfiguration(true)) {
+      try {
+        serverContext = serverConfig.createSSLContext(true);
+      } catch (GenericStoreException e) {
         log.fatal("External server SSL Context is not valid, check the certificate or the config files!");
-        throw new AuthException("External server SSL Context is not valid, check the certificate or the config files!");
+        throw new AuthException("External server SSL Context is not valid, check the certificate or the config files!", e);
       }
-      serverContext = serverConfig.createSSLContext();
       outboundServerContext = serverContext;
       config.property("server_common_name", getServerCN(gatekeeperKeystorePath, gatekeeperKeystorePass, false));
 
@@ -319,7 +365,7 @@ public class GatekeeperMain implements NeedsCoreSystemService {
   }
 
   @Override
-  public void getCoreSystemServiceUris(Map<String, String[]> uriMap) {
+  public void getCoreSystemServiceURIs(Map<String, String[]> uriMap) {
     for (Entry<String, String[]> entry : uriMap.entrySet()) {
       switch (entry.getKey()) {
         case "AuthorizationControl":
@@ -342,6 +388,10 @@ public class GatekeeperMain implements NeedsCoreSystemService {
   }
 
   private static String getServerCN(String certPath, String certPass, boolean inbound) {
+    if (certPath == null || certPass == null) {
+      throw new ArrowheadException("Server certificate path or password is missing, can not acquire server common name!");
+    }
+
     KeyStore keyStore = SecurityUtils.loadKeyStore(certPath, certPass);
     X509Certificate serverCert = SecurityUtils.getFirstCertFromKeyStore(keyStore);
     BASE64_PUBLIC_KEY = Base64.getEncoder().encodeToString(serverCert.getPublicKey().getEncoded());
@@ -375,5 +425,33 @@ public class GatekeeperMain implements NeedsCoreSystemService {
     DatabaseManager.closeSessionFactory();
     System.out.println("Gatekeeper Server stopped");
     System.exit(0);
+  }
+
+  static String getOrchestratorUri() {
+    if (ORCHESTRATOR_URI == null) {
+      throw new ArrowheadException(GET_CORE_SYSTEM_URLS_ERROR_MESSAGE, 500);
+    }
+    return ORCHESTRATOR_URI;
+  }
+
+  static String getAuthControlUri() {
+    if (AUTH_CONTROL_URI == null) {
+      throw new ArrowheadException(GET_CORE_SYSTEM_URLS_ERROR_MESSAGE, 500);
+    }
+    return AUTH_CONTROL_URI;
+  }
+
+  static String[] getGatewayConsumerUri() {
+    if (GATEWAY_CONSUMER_URI == null) {
+      throw new ArrowheadException(GET_CORE_SYSTEM_URLS_ERROR_MESSAGE, 500);
+    }
+    return GATEWAY_CONSUMER_URI;
+  }
+
+  static String[] getGatewayProviderUri() {
+    if (GATEWAY_PROVIDER_URI == null) {
+      throw new ArrowheadException(GET_CORE_SYSTEM_URLS_ERROR_MESSAGE, 500);
+    }
+    return GATEWAY_PROVIDER_URI;
   }
 }

@@ -40,6 +40,7 @@ import org.glassfish.grizzly.http.server.CLStaticHttpHandler;
 import org.glassfish.grizzly.http.server.HttpHandler;
 import org.glassfish.grizzly.http.server.HttpServer;
 import org.glassfish.grizzly.ssl.SSLContextConfigurator;
+import org.glassfish.grizzly.ssl.SSLContextConfigurator.GenericStoreException;
 import org.glassfish.grizzly.ssl.SSLEngineConfigurator;
 import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
 import org.glassfish.jersey.server.ResourceConfig;
@@ -64,6 +65,7 @@ public abstract class ArrowheadMain {
   private static final Logger log = Logger.getLogger(ArrowheadMain.class.getName());
 
   {
+    DatabaseManager.init();
     PropertyConfigurator.configure(props);
   }
 
@@ -71,7 +73,6 @@ public abstract class ArrowheadMain {
     System.out.println("Working directory: " + System.getProperty("user.dir"));
     packages = addSwaggerToPackages(packages);
     this.coreSystem = coreSystem;
-    DatabaseManager.init();
 
     boolean isSecure = false;
     //Read in command line arguments
@@ -179,12 +180,13 @@ public abstract class ArrowheadMain {
     sslCon.setKeyPass(keyPass);
     sslCon.setTrustStoreFile(truststorePath);
     sslCon.setTrustStorePass(truststorePass);
-    if (!sslCon.validateConfiguration(true)) {
+    SSLContext sslContext;
+    try {
+      sslContext = sslCon.createSSLContext(true);
+    } catch (GenericStoreException e) {
       log.fatal("SSL Context is not valid, check the certificate or the config files!");
-      throw new AuthException("SSL Context is not valid, check the certificate or the config files!");
+      throw new AuthException("SSL Context is not valid, check the certificate or the config files!", e);
     }
-
-    SSLContext sslContext = sslCon.createSSLContext();
     Utility.setSSLContext(sslContext);
 
     KeyStore keyStore = SecurityUtils.loadKeyStore(keystorePath, keystorePass);
@@ -246,7 +248,7 @@ public abstract class ArrowheadMain {
       if (isSecure) {
         providedService.setServiceMetadata(ArrowheadMain.secureServerMetadata);
       }
-      ServiceRegistryEntry srEntry = new ServiceRegistryEntry(providedService, provider, service.getServiceUri());
+      ServiceRegistryEntry srEntry = new ServiceRegistryEntry(providedService, provider, service.getServiceURI());
 
       if (registering) {
         try {
@@ -256,9 +258,9 @@ public abstract class ArrowheadMain {
             Utility.sendRequest(UriBuilder.fromUri(srBaseUri).path("remove").build().toString(), "PUT", srEntry);
             Utility.sendRequest(UriBuilder.fromUri(srBaseUri).path("register").build().toString(), "POST", srEntry);
           } else if (e.getExceptionType() == ExceptionType.UNAVAILABLE) {
-            System.out.println("Service Registry is unavailable at the moment, retrying in 10 seconds...");
+            System.out.println("Service Registry is unavailable at the moment, retrying in 15 seconds...");
             try {
-              Thread.sleep(10000);
+              Thread.sleep(15000);
               if (registeringTries == 3) {
                 throw e;
               } else {

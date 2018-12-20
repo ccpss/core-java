@@ -21,6 +21,7 @@ import javax.persistence.OneToOne;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
 import javax.xml.bind.annotation.XmlTransient;
+import org.hibernate.annotations.GenericGenerator;
 
 @Entity
 @Table(name = "deployed_system", uniqueConstraints = {@UniqueConstraint(columnNames = {"arrowhead_system_id"})})
@@ -28,7 +29,8 @@ public class DeployedSystem {
 
   @Column(name = "id")
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private int id;
 
   @OneToOne(fetch = FetchType.EAGER, cascade = {CascadeType.MERGE})

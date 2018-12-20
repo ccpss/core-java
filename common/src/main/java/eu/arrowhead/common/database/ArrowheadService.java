@@ -10,6 +10,7 @@ package eu.arrowhead.common.database;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.google.common.base.MoreObjects;
+import eu.arrowhead.common.Utility;
 import eu.arrowhead.common.json.constraint.SENotBlank;
 import eu.arrowhead.common.json.support.ArrowheadServiceSupport;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import javax.persistence.Table;
 import javax.persistence.Transient;
 import javax.persistence.UniqueConstraint;
 import javax.validation.constraints.Size;
+import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.validator.constraints.NotBlank;
 
 /**
@@ -43,7 +45,8 @@ import org.hibernate.validator.constraints.NotBlank;
 public class ArrowheadService {
 
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private Long id;
 
   @NotBlank
@@ -152,7 +155,10 @@ public class ArrowheadService {
 
   public void partialUpdate(ArrowheadService other) {
     this.serviceDefinition = other.getServiceDefinition() != null ? other.getServiceDefinition() : this.serviceDefinition;
-    this.interfaces = other.getInterfaces().isEmpty() ? this.interfaces : other.getInterfaces();
-    this.serviceMetadata = other.getServiceMetadata().isEmpty() ? this.serviceMetadata : other.getServiceMetadata();
+    //Making deep copies of the collections with the help of JSON (de)serialization
+    this.interfaces =
+        other.getInterfaces().isEmpty() ? this.interfaces : Utility.fromJson(Utility.toPrettyJson(null, other.getInterfaces()), Set.class);
+    this.serviceMetadata = other.getServiceMetadata().isEmpty() ? this.serviceMetadata
+                                                                : Utility.fromJson(Utility.toPrettyJson(null, other.getServiceMetadata()), Map.class);
   }
 }

@@ -26,6 +26,7 @@ import javax.persistence.OneToMany;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
 import javax.xml.bind.annotation.XmlTransient;
+import org.hibernate.annotations.GenericGenerator;
 
 @Entity
 @Table(name = "node", uniqueConstraints = {@UniqueConstraint(columnNames = {"device_model_code"})})
@@ -33,7 +34,8 @@ public class Node {
 
   @Column(name = "id")
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private int id;
 
   @Column(name = "device_model_code")

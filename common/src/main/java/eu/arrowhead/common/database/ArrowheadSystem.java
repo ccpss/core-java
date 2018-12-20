@@ -21,6 +21,7 @@ import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
+import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.validator.constraints.NotBlank;
 
 @Entity
@@ -28,7 +29,8 @@ import org.hibernate.validator.constraints.NotBlank;
 public class ArrowheadSystem {
 
   @Id
-  @GeneratedValue(strategy = GenerationType.AUTO)
+  @GenericGenerator(name = "table_generator", strategy = "org.hibernate.id.enhanced.TableGenerator")
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "table_generator")
   private Long id;
 
   @NotBlank
@@ -64,10 +66,10 @@ public class ArrowheadSystem {
   public ArrowheadSystem(String json) {
     String[] fields = json.split(",");
     this.systemName = fields[0].equals("null") ? null : fields[0];
+    this.address = fields[1].equals("null") ? null : fields[1];
+    this.port = Integer.valueOf(fields[2]);
 
     if (fields.length == 4) {
-      this.address = fields[1].equals("null") ? null : fields[1];
-      this.port = Integer.valueOf(fields[2]);
       this.authenticationInfo = fields[3].equals("null") ? null : fields[3];
     }
   }
