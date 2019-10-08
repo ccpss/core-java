@@ -11,6 +11,7 @@ import eu.arrowhead.common.DatabaseManager;
 import eu.arrowhead.common.database.ArrowheadService;
 import eu.arrowhead.common.database.ArrowheadSystem;
 import eu.arrowhead.common.database.ServiceRegistryEntry;
+import eu.arrowhead.common.exception.BadPayloadException;
 import eu.arrowhead.common.exception.DuplicateEntryException;
 import eu.arrowhead.common.messages.ServiceQueryForm;
 import eu.arrowhead.common.messages.ServiceQueryResult;
@@ -48,6 +49,13 @@ public class ServiceRegistryResource {
   @Path("register")
   public Response registerService(@Valid ServiceRegistryEntry entry) {
     entry.toDatabase();
+
+    ArrowheadSystem provider = entry.getProvider();
+    if("0.0.0.0".equals(provider.getAddress()))
+    {
+      throw new BadPayloadException("0.0.0.0 is not a valid destination IP address");
+    }
+
     restrictionMap.put("serviceDefinition", entry.getProvidedService().getServiceDefinition());
     ArrowheadService service = dm.get(ArrowheadService.class, restrictionMap);
     if (service == null) {
@@ -59,10 +67,12 @@ public class ServiceRegistryResource {
     entry.setProvidedService(service);
 
     restrictionMap.clear();
-    restrictionMap.put("systemName", entry.getProvider().getSystemName());
-    restrictionMap.put("address", entry.getProvider().getAddress());
-    restrictionMap.put("port", entry.getProvider().getPort());
-    ArrowheadSystem provider = dm.get(ArrowheadSystem.class, restrictionMap);
+    restrictionMap.put("systemName", provider.getSystemName());
+    restrictionMap.put("address", provider.getAddress());
+    restrictionMap.put("port", provider.getPort());
+    provider = dm.get(ArrowheadSystem.class, restrictionMap);
+
+
     if (provider == null) {
       provider = dm.save(entry.getProvider());
     } else {
@@ -83,7 +93,7 @@ public class ServiceRegistryResource {
               .getServiceDefinition() + ")");
     }
 
-    savedEntry.fromDatabase();
+    savedEntry.fromDatabase(true);
     log.info("New " + entry.toString() + " is saved.");
     return Response.status(Status.CREATED).entity(savedEntry).build();
   }
@@ -102,9 +112,11 @@ public class ServiceRegistryResource {
     restrictionMap.put("providedService", service);
     List<ServiceRegistryEntry> providedServices = dm.getAll(ServiceRegistryEntry.class, restrictionMap);
     for (ServiceRegistryEntry entry : providedServices) {
-      entry.fromDatabase();
+      entry.fromDatabase(true);
     }
 
+    log.debug("Potential service providers before filtering:" + providedServices.size());
+    RegistryUtils.filterOnInterfaces(providedServices, queryForm.getService());
     if (queryForm.getVersion() != null) {
       RegistryUtils.filterOnVersion(providedServices, queryForm.getVersion());
     } else {
@@ -126,6 +138,7 @@ public class ServiceRegistryResource {
     if (queryForm.isPingProviders()) {
       RegistryUtils.filterOnPing(providedServices);
     }
+    log.debug("Potential service providers after filtering:" + providedServices.size());
 
     log.info("Service " + queryForm.getService().toString() + " queried successfully.");
     ServiceQueryResult result = new ServiceQueryResult(providedServices);
@@ -150,7 +163,7 @@ public class ServiceRegistryResource {
     ServiceRegistryEntry retrievedEntry = dm.get(ServiceRegistryEntry.class, restrictionMap);
     if (retrievedEntry != null) {
       dm.delete(retrievedEntry);
-      retrievedEntry.fromDatabase();
+      retrievedEntry.fromDatabase(true);
       log.info(retrievedEntry.toString() + " deleted.");
       return Response.status(Status.OK).entity(retrievedEntry).build();
     } else {

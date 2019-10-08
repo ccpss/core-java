@@ -7,6 +7,13 @@
 
 package eu.arrowhead.core.deviceregistry;
 
+import eu.arrowhead.common.database.DeviceRegistryEntry;
+import eu.arrowhead.common.exception.ArrowheadException;
+import eu.arrowhead.common.misc.registry_interfaces.RegistryResource;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import javax.validation.Valid;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -17,73 +24,67 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
-
 import org.apache.log4j.Logger;
-
-import eu.arrowhead.common.RegistryResource;
-import eu.arrowhead.common.exception.ArrowheadException;
-import eu.arrowhead.core.deviceregistry.model.DeviceRegistryEntry;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
 
 @Path("deviceregistry")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class DeviceRegistryResource implements RegistryResource<DeviceRegistryEntry, Response> {
 
-	private final Logger log = Logger.getLogger(DeviceRegistryResource.class.getName());
-	private final DeviceRegistryService registryService;
+  private final Logger logger = Logger.getLogger(DeviceRegistryResource.class.getName());
+  private final DeviceRegistryService registryService;
 
 
-	public DeviceRegistryResource() throws ExceptionInInitializerError {
-		super();
-		registryService = new DeviceRegistryService();
-		log.info(DeviceRegistryResource.class.getSimpleName() + " created");
-	}
-	
+  public DeviceRegistryResource() throws ExceptionInInitializerError {
+    super();
+    registryService = new DeviceRegistryService();
+    logger.info(DeviceRegistryResource.class.getSimpleName() + " created");
+  }
+
   @GET
   @Produces(MediaType.TEXT_PLAIN)
   public Response ping() {
     return Response.status(Response.Status.OK).entity("This is the Device Registry Arrowhead Core System.").build();
   }
-	
-	@GET
-	@Path(LOOKUP_PATH)
-	@Operation(summary = "Searches a DeviceRegistryEntry by id", responses = {
-	    @ApiResponse(content = @Content(schema = @Schema(implementation = DeviceRegistryEntry.class))) })
-	public Response lookup(@PathParam("id") final long id) throws ArrowheadException {
-		DeviceRegistryEntry returnValue;
-		Response response;
 
-		returnValue = registryService.lookup(id);
-		response = Response.status(Status.OK).entity(returnValue).build();
+  @GET
+  @Path(LOOKUP_PATH)
+  @Operation(summary = "Searches a DeviceRegistryEntry by id", responses = {
+      @ApiResponse(content = @Content(schema = @Schema(implementation = DeviceRegistryEntry.class)))})
+  public Response lookup(@PathParam(LOOKUP_ID) final long id) throws ArrowheadException {
+    DeviceRegistryEntry returnValue;
+    Response response;
 
-		return response;
-	}
-	
-	@POST
-	@Path(PUBLISH_PATH)
-	public Response publish(@Valid final DeviceRegistryEntry entry) throws ArrowheadException {
-		DeviceRegistryEntry returnValue;
-		Response response;
+    logger.info("Lookup: " + id);
+    returnValue = registryService.lookup(id);
+    response = Response.status(Status.OK).entity(returnValue).build();
 
-		returnValue = registryService.publish(entry);
-		response = Response.status(Status.CREATED).entity(returnValue).build();
+    return response;
+  }
 
-		return response;
-	}
+  @POST
+  @Path(PUBLISH_PATH)
+  public Response publish(@Valid final DeviceRegistryEntry entry) throws ArrowheadException {
+    DeviceRegistryEntry returnValue;
+    Response response;
 
-	@POST
-	@Path(UNPUBLISH_PATH)
-	public Response unpublish(@Valid final DeviceRegistryEntry entry) throws ArrowheadException {
-		DeviceRegistryEntry returnValue;
-		Response response;
+    logger.info("publish: " + entry);
+    returnValue = registryService.publish(entry);
+    response = Response.status(Status.CREATED).entity(returnValue).build();
 
-		returnValue = registryService.unpublish(entry);
-		response = Response.status(Status.OK).entity(returnValue).build();
+    return response;
+  }
 
-		return response;
-	}
+  @POST
+  @Path(UNPUBLISH_PATH)
+  public Response unpublish(@Valid final DeviceRegistryEntry entry) throws ArrowheadException {
+    DeviceRegistryEntry returnValue;
+    Response response;
+
+    logger.info("unpublish: " + entry);
+    returnValue = registryService.unpublish(entry);
+    response = Response.status(Status.OK).entity(returnValue).build();
+
+    return response;
+  }
 }
